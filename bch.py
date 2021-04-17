@@ -1,146 +1,91 @@
-import random
-import functools
-from sympy import *
-from sympy.abc import x, alpha
-from sympy.polys.galoistools import gf_rem, gf_compose
+# Ben Sherwin, Ben Flin, Max Helman
+# Idea: interpret binary int as polynomial in F_2[x], e.g. 0b10110 = x^4 + x^2 + x
+# The advantage of this is that adding two polynomials in F_2 can be calculated by XOR
+#   and many other attributes/manipulations are easier/faster
 
-class Polynomial:
-    def __init__(self, coeff = []):
-        self.coeff = coeff
-    def __mul__(self, other):
-        poly1 = self
-        poly2 = other
-        result = Polynomial()
-        result.coeff = (poly1.deg() + poly2.deg() + 1) * [0]
-        for i in range(poly1.deg() + 1):
-            for j in range(poly2.deg() + 1):
-                result.coeff[i+j] ^= (poly1.coeff[i] & poly2.coeff[j])
-        return result
-        
-    def deg(self):
-        return len(self.coeff) - 1
-    
-    def __str__(self):
-        string = ""
-        n = self.deg()
-        for a in self.coeff:
-            string += str(a) + "x^" + str(n) + (" + " if n > 0 else "")
-            n = n - 1
-        return string 
-    
-    def pretty(self):
-        string = ""
-        for i in self.coeff:
-            string += str(i)
-        return string
+# Returns poly1 * poly2 in F_2[x]
+def mult_as_polys(poly1, poly2):
+    result = 0
+    for i in range(poly1.bit_length()):
+        for j in range(poly2.bit_length()):
+            # First, we get the first i and j bits of poly1 and poly2 by rightshifting (>>) by i and j respectively.
+            # Then, we multiply the first i and j bits/coefficients in F_2 using bitwise and (&). 
+            # Then, we (&) the result of the multiplication with 1 in order to set the first (i-1) bits to 0.
+            # We leftshift (<<) the single bit back to (i + j) since now that single bit represents the coeffecient of x^(i+j).  
+            # Finally, we add it to result using xor (^).
+            # E.g.
+            # poly1 = 0b101 = x^2 + 1,  poly2 = 0b011 = x + 1
+            # result = 0b1111 = x^3 + x^2 + x + 1  
+            result ^= ((poly1 >> i) & (poly2 >> j) & 1) << (i + j)
+    return result
 
-    def evaluate(self, value):
-        if type(value) == int:
-            result = 0
-            for i in range(self.deg() + 1):
-                result += value**i * self.coeff[self.deg() - i]
-            return result
-        else:
-            return self.evaluate_polynomial(value)
-    
-    def evaluate_polynomial(self, poly):
-        # result = Polynomial([])
-        # for i in range(self.deg() + 1):
-        #     if(self.coeff[i] == 1):
-        #         result += poly**(self.deg() - i)
-        # return result
+# Returns poly1 / poly2, poly1 mod poly2
+def bitwise_long_divide(poly1, poly2):
+    deg_dividend = poly1.bit_length()
+    deg_divisor = poly2.bit_length()
+    remainder = poly1
+    quotient = 0
+    # Implements polynomial long division through bit manipulations
+    # E.g. for the first iteration of long division:  
+    # 
+    #        0b10 (quotient |= deg1 - deg2)
+    #      ------- 
+    # 0b11 | 0b101 
+    #       -0b110 (poly2 << (deg1 - deg2))
+    #      -------  
+    #        0b011 (remainder ^= poly2 << (deg1 - deg2))
 
-        return Polynomial(gf_compose(ZZ.map(self.coeff), ZZ.map(poly.coeff), 2, ZZ))
-        
+    # Continue dividing until deg(current dividend) < deg(divisor)   
+    while deg_dividend >= deg_divisor:
+        # We obtain the current remainder by rightshifting the divisior 
+        # by the difference between the degrees of the dividend and remainder. This step allows
+        # us to get the polynomial to subtract from the dividend. Then, to
+        # subtract, we use bitwise xor (^).
+        remainder ^= poly2 << (deg_dividend - deg_divisor)
 
-    def __add__(self, other):
-        deg = max(self.deg(), other.deg()) 
-        coeff = (deg + 1) * [0]
+        # The digit associated with the quotient can be thought of similarly
+        # as above. We rightshift a single bit by the difference of the degrees
+        # and add it to the quotient. This provides the necessary binary int x, such that 
+        # mult_as_polys(x, poly2) = (poly2 << (deg1 - deg2))
+        quotient |= 1 << (deg_dividend - deg_divisor)
 
-        poly1 = self.coeff[::-1]
-        poly2 = other.coeff[::-1]
+        # The remainder becomes the new dividend for the next iteration
+        deg_dividend = remainder.bit_length()
 
-        for i in range(deg + 1):
-            if i < len(poly1):
-                coeff[i] += poly1[i] 
-            if i < len(poly2):
-                coeff[i] += poly2[i] 
-            coeff[i] %= 2 
+    return quotient, remainder
 
-        result = Polynomial(coeff[::-1]) 
-        return result
+# calculates poly(alpha^i) in GF(2^(deg generator))
+def eval_at_alpha_pow_bitwise(poly, i, generator):
+    # for each power of poly(x^i), calculate and add up corresponding power of alpha:
+    p = poly
+    result = 0
+    while p != 0:
+        result ^= bitwise_long_divide(1 << ((p.bit_length() - 1) * i) % (2**(generator.bit_length() - 1) - 1), generator)[1]
+        #result ^= bitwise_long_divide(1 << ((p.bit_length() - 1) * i), generator)
+        p ^= 1 << (p.bit_length() - 1)
 
-    def __pow__(self, exp):
-        # power by repeated multiplication
-        result = Polynomial(self.coeff)
-        for i in range(exp - 1):
-            result = result * self
-        return result
-    
-    def remainder(self, poly):
-        return Polynomial(gf_rem(ZZ.map(self.coeff), ZZ.map(poly.coeff), 2, ZZ))
+    return result
 
+# print(bin(eval_at_alpha_pow_bitwise(0b1101110111010000110110101, 9, 0b100011101)))
 
+# Polynomials for a (255, 231) BCH code with t = 3
+# Citation:
+# https://link.springer.com/content/pdf/bbm%3A978-1-4899-2174-1%2F1.pdf 
+primitive_poly = 0b100011101
+# generator_poly = lcm(m_1, ..., m_6) = (100011101)*(101110111)*(111110011)
+generator_poly = 0b1101110111010000110110101
 
-# 1. Create a list (list1) of x^i mod generator_poly for 0 <= i < 256 (really alphas)
-# 2. Another, parallel list (list2) of each of the above polynomials with coefficients 
-#    listwise interpreted as a binary integer (x^2 + 1 = 101 = 5)
-# 3. In order to calculate generator_poly(alpha^i), calculate generator_poly(x^i), 
-#    and then for each term x^j, look up and xor list2[j % 255]. (adding in F_2[x])
-# 4. Interpret final result as polynomial.
+#message = 2**232 - 1      # all 1s
+message = 0              # all 0s
 
+encoded_msg = mult_as_polys(message, generator_poly)
 
-# (n,k) = (255, 239) generator polynomial 
-# Citation: https://link.springer.com/content/pdf/bbm%3A978-1-4899-2174-1%2F1.pdf
-# The octal notation was converted to binary
-generator_poly = Poly.from_list([ int(i) for i in list("10110111101100011")], gens=[x], domain=GF(2)) 
+encoded_msg ^= 1 << 50
 
-print(generator_poly.all_coeffs())
-basis_poly = Poly.from_list([ int(i) for i in list("100011101")], gens=[x], domain=GF(2)) # NOT 101110111
+# syndromes:
+for i in range(1, 7):
+    print(bin(eval_at_alpha_pow_bitwise(encoded_msg, i, primitive_poly)))
 
-powers_of_alpha = [ Poly(x ** i, gens=[x], domain=GF(2)).rem(basis_poly) for i in range(256) ]
-list2 = [ p.all_coeffs() for p in powers_of_alpha ]
+#print(bin(bitwise_long_divide(encoded_msg, generator_poly)[0]))
 
-def eval_at_alpha_pow(poly, i):
-    result = [0, 0, 0, 0, 0, 0, 0, 0]
-    poly = compose(poly, x**i)
-    for j in poly.all_coeffs():
-        for i in range(len(list2[j % 255])):
-            result[i] ^= list2[j % 255][i]  
-    return Poly.from_list(result, gens=[x], domain=GF(2))
-
-print(eval_at_alpha_pow(generator_poly, 2))
-
-
-
-
-
-
-
-
-# if __name__ == '__main__':  
-
-#     err_rate = float(input("Enter desired error rate: "))
-
-#     print("--- Message to be encoded ---")
-#     print(msg_poly.pretty())
-
-#     # generate encoded_msg 
-#     encoded_msg = generator_poly * msg_poly
-
-#     print("--- Encoded message ---")
-#     print(encoded_msg.pretty())
-#     # randomly permute encoded message 
-#     for i in range(len(encoded_msg.coeff)):
-#         if random.random() < err_rate:
-#             encoded_msg.coeff[i] = random.randint(0, 1) 
-
-#     print("--- Permuted message ---")
-#     print(encoded_msg.pretty())
-
-#     poly1 = Polynomial([1,0,1,1])
-#     poly2 = Polynomial([1,1,0])
-#     print(poly1)
-#     print(poly2)
-#     print(poly1*poly2)
-#     print(generator_poly.evaluate(alpha).pretty())
+print(bin(bitwise_long_divide(1 << 50, primitive_poly)[1]))
