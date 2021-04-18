@@ -77,7 +77,12 @@ generator_poly = 0b1101110111010000110110101
 
 # message is 231 bits of data
 #message = 2**232 - 1      # all 1s
-message = 0              # all 0s
+#message = 0              # all 0s
+message = 0
+for char in "Peepee!":
+    message = message << 8
+    message += ord(char)
+
 print("Original Message: " + str(message))
 
 # encodes message
@@ -94,11 +99,10 @@ def get_syndromes(encoded, primitive):
 syndromes = get_syndromes(encoded_msg, primitive_poly)
 # print([bin(x) for x in syndromes])
 
-restored_msg = 0
+restored_msg = bitwise_long_divide(encoded_msg, generator_poly)[0]
 
 # check if no errors
 if syndromes == 6 * [0]:
-    restored_msg = bitwise_long_divide(encoded_msg, generator_poly)[0]
     print("No errors!")
 
 # check for 1 error
@@ -116,3 +120,11 @@ for i in range(256):
         break
 
 print("Restored Message: " + str(restored_msg))
+
+text = ""
+recovered_text = restored_msg
+while recovered_text != 0:
+    text = chr(recovered_text & 0b11111111) + text
+    recovered_text = recovered_text >> 8
+
+print(text)
