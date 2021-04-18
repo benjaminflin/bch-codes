@@ -66,7 +66,6 @@ def eval_at_alpha_pow_bitwise(poly, i, generator):
 
     return result
 
-# print(bin(eval_at_alpha_pow_bitwise(0b1101110111010000110110101, 9, 0b100011101)))
 
 # Polynomials for a (255, 231) BCH code with t = 3
 # Citation:
@@ -98,11 +97,10 @@ encoded_msg ^= 1 << 218
 
 # generates the syndromes of the 255 bit encoded polynomial
 def get_syndromes(encoded, primitive):
-    return [eval_at_alpha_pow_bitwise(encoded, i, primitive) for i in range(1, 7)]
+    return [eval_at_alpha_pow_bitwise(encoded, i, primitive) for i in range(1, 2*t + 1)]
 
 syndromes = get_syndromes(encoded_msg, primitive_poly)
 #print([bin(x) for x in syndromes])
-#print([x for x in syndromes])
 
 restored_msg = bitwise_long_divide(encoded_msg, generator_poly)[0]
 
@@ -145,9 +143,8 @@ class GF256(object):
 
 import numpy as np
 # Peterson–Gorenstein–Zierler algorithm to locate error correction polynomial
-v = 2 # t
+v = t
 s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
-
 
 # while v > 0:
 #     s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
