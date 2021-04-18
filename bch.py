@@ -75,17 +75,44 @@ primitive_poly = 0b100011101
 # generator_poly = lcm(m_1, ..., m_6) = (100011101)*(101110111)*(111110011)
 generator_poly = 0b1101110111010000110110101
 
+# message is 231 bits of data
 #message = 2**232 - 1      # all 1s
 message = 0              # all 0s
+print("Original Message: " + str(message))
 
+# encodes message
 encoded_msg = mult_as_polys(message, generator_poly)
 
+# introduces errors
 encoded_msg ^= 1 << 50
+#encoded_msg ^= 1 << 60
 
-# syndromes:
-for i in range(1, 7):
-    print(bin(eval_at_alpha_pow_bitwise(encoded_msg, i, primitive_poly)))
+# generates the syndromes of the 255 bit encoded polynomial
+def get_syndromes(encoded, primitive):
+    return [eval_at_alpha_pow_bitwise(encoded, i, primitive) for i in range(1, 7)]
+
+syndromes = get_syndromes(encoded_msg, primitive_poly)
+# print([bin(x) for x in syndromes])
+
+restored_msg = 0
+
+# check if no errors
+if syndromes == 6 * [0]:
+    restored_msg = bitwise_long_divide(encoded_msg, generator_poly)[0]
+    print("No errors!")
+
+# check for 1 error
+# find alpha^i = first syndrome and flip the ith bit and see if it's a valid message
+for i in range(256):
+    if bitwise_long_divide(1 << i, primitive_poly)[1] == syndromes[0]:
+        potential_fix = encoded_msg ^ 1 << i
+        if get_syndromes(potential_fix, primitive_poly) == 6 * [0]:
+            restored_msg = bitwise_long_divide(potential_fix, generator_poly)[0]
+            print("1 error at " + str(i) + "th bit")
+        break
+
+print("Restored Message: " + str(restored_msg))
 
 #print(bin(bitwise_long_divide(encoded_msg, generator_poly)[0]))
 
-print(bin(bitwise_long_divide(1 << 50, primitive_poly)[1]))
+# print(bin(bitwise_long_divide(1 << 50, primitive_poly)[1]))
