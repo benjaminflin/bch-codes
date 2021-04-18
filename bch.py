@@ -104,15 +104,15 @@ if syndromes == 6 * [0]:
 # check for 1 error
 # find alpha^i = first syndrome and flip the ith bit and see if it's a valid message
 for i in range(256):
+    # check if alpha^i = encoded_msg(alpha)
     if bitwise_long_divide(1 << i, primitive_poly)[1] == syndromes[0]:
-        potential_fix = encoded_msg ^ 1 << i
+        # reverse the error
+        potential_fix = encoded_msg ^ (1 << i)
+
+        # check for correctness
         if get_syndromes(potential_fix, primitive_poly) == 6 * [0]:
             restored_msg = bitwise_long_divide(potential_fix, generator_poly)[0]
             print("1 error at " + str(i) + "th bit")
         break
 
 print("Restored Message: " + str(restored_msg))
-
-#print(bin(bitwise_long_divide(encoded_msg, generator_poly)[0]))
-
-# print(bin(bitwise_long_divide(1 << 50, primitive_poly)[1]))
