@@ -71,16 +71,14 @@ def eval_at_alpha_pow_bitwise(poly, i, generator):
 # Citation:
 # https://link.springer.com/content/pdf/bbm%3A978-1-4899-2174-1%2F1.pdf 
 primitive_poly = 0b100011101
-# generator_poly = lcm(m_1, ..., m_6) = (100011101)*(101110111)*(111110011)
+# generator_poly = lcm(m_1, ..., m_6) = (100011101)*(101110111)*(111110011) for t = 3
 generator_poly = 0b1101110111010000110110101
 # max number of correctable errors
 t = 3
 
-# message is 231 bits of data
-#message = 2**232 - 1      # all 1s
-#message = 0              # all 0s
+# message is 255 - deg(generator_poly) + 1 bits of data
 message = 0
-for char in "Peepee!":
+for char in "Inbar is a great professor!":
     message = message << 8
     message += ord(char)
 
@@ -90,10 +88,11 @@ print("Original Message: " + str(message))
 encoded_msg = mult_as_polys(message, generator_poly)
 
 # introduces errors
-print("Introducing errors")
-encoded_msg ^= 1 << 50
-encoded_msg ^= 1 << 150
-encoded_msg ^= 1 << 218
+added_errors = [51, 150, 218]
+for err in added_errors:
+    encoded_msg ^= 1 << err
+
+print("Introducing errors at: " + str(added_errors))
 
 # generates the syndromes of the 255 bit encoded polynomial
 def get_syndromes(encoded, primitive):
@@ -104,22 +103,27 @@ syndromes = get_syndromes(encoded_msg, primitive_poly)
 
 restored_msg = bitwise_long_divide(encoded_msg, generator_poly)[0]
 
+corrected = False
+
 # check if no errors
 if syndromes == (2*t) * [0]:
     print("No errors!")
+    corrected = True
 
 # store the powers of alpha in a table
 alpha_pows = [bitwise_long_divide(1 << i, primitive_poly)[1] for i in range(255)]
 
 # check for 1 error
 # find alpha^i = first syndrome and flip the ith bit and see if it's a valid message
-error_bit = alpha_pows.index(syndromes[0])
-potential_fix = encoded_msg ^ (1 << error_bit)
+if not corrected: 
+    error_bit = alpha_pows.index(syndromes[0])
+    potential_fix = encoded_msg ^ (1 << error_bit)
 
-# check for correctness
-if get_syndromes(potential_fix, primitive_poly) == (2*t) * [0]:
-    restored_msg = bitwise_long_divide(potential_fix, generator_poly)[0]
-    print("1 error at " + str(error_bit) + "th bit")
+    # check for correctness
+    if get_syndromes(potential_fix, primitive_poly) == (2*t) * [0]:
+        restored_msg = bitwise_long_divide(potential_fix, generator_poly)[0]
+        print("1 error at " + str(error_bit) + "th bit")
+        corrected = True
 
 
 # making a class for numpy matrix operations
@@ -144,7 +148,7 @@ class GF256(object):
             return GF256(1)
          
         val = GF256(self.poly)
-        for i in range(int_power - 1):
+        for _ in range(int_power - 1):
             val *= GF256(self.poly)
         return val
     def __repr__(self):
@@ -185,40 +189,46 @@ def get_inv(arr):
     det_inv = GF256(1) / rec_det(arr)
     return minors * det_inv
 
+if not corrected:
+    while v > 0:
+        s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
+        if rec_det(s_mat) != GF256(0):
+            break
+        else: 
+            v -= 1
+            if v == 0:
+                print("empty error locator polynomial")
 
-while v > 0:
-    s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
-    if rec_det(s_mat) != GF256(0):
-        break
-    else: 
-        v -= 1
-        if v == 0:
-            print("empty error locator polynomial")
+    c_mat = np.array([GF256(syndromes[v+i]) for i in range(v)], dtype=np.dtype(GF256)).T
 
-c_mat = np.array([GF256(syndromes[v+i]) for i in range(v)], dtype=np.dtype(GF256)).T
-
-lambda_mat = np.matmul(get_inv(s_mat), c_mat) 
-lambda_mat = np.append(lambda_mat, [GF256(1)])
-print(lambda_mat)
+    lambda_mat = []
+    if v > 0:
+        lambda_mat = np.matmul(get_inv(s_mat), c_mat) 
+        lambda_mat = np.append(lambda_mat, [GF256(1)])
+        #print(lambda_mat)
 
 
-errors = []
-# evaluate lambda polynomial at all powers of alpha looking for zeros
-for i in range(len(alpha_pows)):
-    # lambda mat = [l1, l2, l3] --> l1x^3 + l2x^2 + l3x + 1
-    # zeros of this poly are powers of alpha, and correspond to errors
-    val = GF256(0)
-    for j in range(len(lambda_mat)):
-        val += lambda_mat[j] * ((GF256(alpha_pows[i]) ** (len(lambda_mat) - j - 1)))
-    # print(val)
-    if val == GF256(0):
-        errors.append(alpha_pows.index((GF256(1) / GF256(alpha_pows[i])).poly))
+    errors = []
+    # evaluate lambda polynomial at all powers of alpha looking for zeros
+    for i in range(len(alpha_pows)):
+        # lambda mat = [l1, l2, l3] --> l1x^3 + l2x^2 + l3x + 1
+        # zeros of this poly are powers of alpha, and correspond to errors
+        val = GF256(0)
+        for j in range(len(lambda_mat)):
+            val += lambda_mat[j] * ((GF256(alpha_pows[i]) ** (len(lambda_mat) - j - 1)))
 
-print(errors)
-potential_fix2 = encoded_msg
-for error in errors:
-    potential_fix2 ^= 1 << error
-restored_msg = bitwise_long_divide(potential_fix2, generator_poly)[0]
+        if val == GF256(0):
+            errors.insert(0, alpha_pows.index((GF256(1) / GF256(alpha_pows[i])).poly))
+
+    print("Found errors at: " + str(errors))
+    potential_fix2 = encoded_msg
+    for error in errors:
+        potential_fix2 ^= 1 << error
+
+    if get_syndromes(potential_fix2, primitive_poly) == (2*t) * [0]:
+        restored_msg = bitwise_long_divide(potential_fix2, generator_poly)[0]
+    else:
+        print("Detected too many errors!")
 
 print("Restored Message: " + str(restored_msg))
 
