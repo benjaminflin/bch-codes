@@ -54,7 +54,7 @@ def bitwise_long_divide(poly1, poly2):
 
     return quotient, remainder
 
-# calculates poly(alpha^i) in GF(2^(deg generator))
+# calculates poly(alpha^i) in GF(2^(deg(generator) - 1))
 def eval_at_alpha_pow_bitwise(poly, i, generator):
     # for each power of poly(x^i), calculate and add up corresponding power of alpha:
     p = poly
@@ -127,7 +127,7 @@ if not corrected:
 
 
 # making a class for numpy matrix operations
-# GF256 ~= F_2[x] / (p(x))
+# GF256 ~= F_2[x] / (primitive_poly)
 class GF256(object):
     def __init__(self, poly):
         self.poly = poly
@@ -157,7 +157,12 @@ class GF256(object):
 import numpy as np
 # Peterson–Gorenstein–Zierler algorithm to locate error correction polynomial
 v = t
-s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)], dtype=np.dtype(GF256))
+s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
+
+
+def get_minor(arr, i, j):
+    dim = arr.shape[0]
+    return np.array([[arr[k][l] for k in range(dim) if k != i] for l in range(dim) if l != j])
 
 # recursively calculate determinant of np array of GF256 objects using LaPlace extension
 def rec_det(arr):
@@ -172,13 +177,9 @@ def rec_det(arr):
     # LaPlace extend and recursively calculate each smaller matrix
     d = GF256(0)
     for i in range(dim):
-        smaller_arr = np.array([[arr[j][k] for j in range(1, dim)] for k in range(dim) if k != i], dtype=np.dtype(GF256))
+        smaller_arr = get_minor(arr, 0, i)
         d = d + (arr[0][i] * rec_det(smaller_arr))
     return d
-
-def get_minor(arr, i, j):
-    dim = arr.shape[0]
-    return np.array([[arr[k][l] for k in range(dim) if k != i] for l in range(dim) if l != j])
 
 def get_inv(arr):
     dim = arr.shape[0]
@@ -199,7 +200,7 @@ if not corrected:
             if v == 0:
                 print("empty error locator polynomial")
 
-    c_mat = np.array([GF256(syndromes[v+i]) for i in range(v)], dtype=np.dtype(GF256)).T
+    c_mat = np.array([GF256(syndromes[v+i]) for i in range(v)]).T
 
     lambda_mat = []
     if v > 0:
@@ -211,7 +212,7 @@ if not corrected:
     errors = []
     # evaluate lambda polynomial at all powers of alpha looking for zeros
     for i in range(len(alpha_pows)):
-        # lambda mat = [l1, l2, l3] --> l1x^3 + l2x^2 + l3x + 1
+        # lambda mat = [l1, l2, l3, 1] --> l1x^3 + l2x^2 + l3x + 1
         # zeros of this poly are powers of alpha, and correspond to errors
         val = GF256(0)
         for j in range(len(lambda_mat)):
@@ -220,7 +221,7 @@ if not corrected:
         if val == GF256(0):
             errors.insert(0, alpha_pows.index((GF256(1) / GF256(alpha_pows[i])).poly))
 
-    print("Found errors at: " + str(errors))
+    print("Located errors at: " + str(errors))
     potential_fix2 = encoded_msg
     for error in errors:
         potential_fix2 ^= 1 << error
