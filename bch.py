@@ -105,7 +105,7 @@ syndromes = get_syndromes(encoded_msg, primitive_poly)
 restored_msg = bitwise_long_divide(encoded_msg, generator_poly)[0]
 
 # check if no errors
-if syndromes == 6 * [0]:
+if syndromes == (2*t) * [0]:
     print("No errors!")
 
 # store the powers of alpha in a table
@@ -117,12 +117,13 @@ error_bit = alpha_pows.index(syndromes[0])
 potential_fix = encoded_msg ^ (1 << error_bit)
 
 # check for correctness
-if get_syndromes(potential_fix, primitive_poly) == 6 * [0]:
+if get_syndromes(potential_fix, primitive_poly) == (2*t) * [0]:
     restored_msg = bitwise_long_divide(potential_fix, generator_poly)[0]
     print("1 error at " + str(error_bit) + "th bit")
 
 
 # making a class for numpy matrix operations
+# GF256 ~= F_2[x] / (p(x))
 class GF256(object):
     def __init__(self, poly):
         self.poly = poly
@@ -132,22 +133,27 @@ class GF256(object):
         return GF256(bitwise_long_divide(mult_as_polys(self.poly, x.poly), primitive_poly)[1])
     def __sub__(self, x):
         return GF256(self.poly ^ x.poly)
-    def __div__(self, x):
-        return alpha_pows[(alpha_pows.index(self.poly) - alpha_pows.index(x.poly)) % (2**(primitive_poly.bit_length() - 1) - 1)]
+    def __truediv__(self, x):
+        return GF256(alpha_pows[(alpha_pows.index(self.poly) - alpha_pows.index(x.poly)) % (2**(primitive_poly.bit_length() - 1) - 1)])
     def __eq__(self, x):
         return self.poly == x.poly
     def __ne__(self, x):
         return self.poly != x.poly
+    def __pow__(self, int_power):
+        if int_power == 0:
+            return GF256(1)
+         
+        val = GF256(self.poly)
+        for i in range(int_power - 1):
+            val *= GF256(self.poly)
+        return val
     def __repr__(self):
         return str(self.poly) #bin(self.poly)
 
 import numpy as np
 # Peterson–Gorenstein–Zierler algorithm to locate error correction polynomial
 v = t
-s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
-
-# print(s_mat)
-# print(s_mat * GF256(2))
+s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)], dtype=np.dtype(GF256))
 
 # recursively calculate determinant of np array of GF256 objects using LaPlace extension
 def rec_det(arr):
@@ -162,12 +168,22 @@ def rec_det(arr):
     # LaPlace extend and recursively calculate each smaller matrix
     d = GF256(0)
     for i in range(dim):
-        smaller_arr = np.array([[arr[j][k] for j in range(1, dim)] for k in range(dim) if k != i])
+        smaller_arr = np.array([[arr[j][k] for j in range(1, dim)] for k in range(dim) if k != i], dtype=np.dtype(GF256))
         d = d + (arr[0][i] * rec_det(smaller_arr))
     return d
 
-# print(rec_det(s_mat))
+def get_minor(arr, i, j):
+    dim = arr.shape[0]
+    return np.array([[arr[k][l] for k in range(dim) if k != i] for l in range(dim) if l != j])
 
+def get_inv(arr):
+    dim = arr.shape[0]
+    if dim == 1:
+        return np.array([[GF256(1) / arr[0][0]]])
+
+    minors = np.array([[rec_det(get_minor(s_mat, i, j)) for i in range(dim)] for j in range(dim)])
+    det_inv = GF256(1) / rec_det(arr)
+    return minors * det_inv
 
 
 while v > 0:
@@ -179,11 +195,30 @@ while v > 0:
         if v == 0:
             print("empty error locator polynomial")
 
-c_mat = np.array([GF256(syndromes[v+i]) for i in range(v)]).T
+c_mat = np.array([GF256(syndromes[v+i]) for i in range(v)], dtype=np.dtype(GF256)).T
 
-lambda_mat = np.matmul(np.linalg.inv(s_mat), c_mat)
+lambda_mat = np.matmul(get_inv(s_mat), c_mat) 
+lambda_mat = np.append(lambda_mat, [GF256(1)])
 print(lambda_mat)
 
+
+errors = []
+# evaluate lambda polynomial at all powers of alpha looking for zeros
+for i in range(len(alpha_pows)):
+    # lambda mat = [l1, l2, l3] --> l1x^3 + l2x^2 + l3x + 1
+    # zeros of this poly are powers of alpha, and correspond to errors
+    val = GF256(0)
+    for j in range(len(lambda_mat)):
+        val += lambda_mat[j] * ((GF256(alpha_pows[i]) ** (len(lambda_mat) - j - 1)))
+    # print(val)
+    if val == GF256(0):
+        errors.append(alpha_pows.index((GF256(1) / GF256(alpha_pows[i])).poly))
+
+print(errors)
+potential_fix2 = encoded_msg
+for error in errors:
+    potential_fix2 ^= 1 << error
+restored_msg = bitwise_long_divide(potential_fix2, generator_poly)[0]
 
 print("Restored Message: " + str(restored_msg))
 
