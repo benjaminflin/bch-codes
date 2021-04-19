@@ -91,8 +91,8 @@ encoded_msg = mult_as_polys(message, generator_poly)
 
 # introduces errors
 print("Introducing errors")
-#encoded_msg ^= 1 << 50
-#encoded_msg ^= 1 << 150
+encoded_msg ^= 1 << 50
+encoded_msg ^= 1 << 150
 encoded_msg ^= 1 << 218
 
 # generates the syndromes of the 255 bit encoded polynomial
@@ -139,26 +139,50 @@ class GF256(object):
     def __ne__(self, x):
         return self.poly != x.poly
     def __repr__(self):
-        return bin(self.poly)
+        return str(self.poly) #bin(self.poly)
 
 import numpy as np
 # Peterson–Gorenstein–Zierler algorithm to locate error correction polynomial
 v = t
 s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
 
-# while v > 0:
-#     s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
-#     if np.linalg.det(s_mat) != GF256(0):
-#         break
-#     else: 
-#         v -= 1
-#         if v == 0:
-#             print("empty error locator polynomial")
+# print(s_mat)
+# print(s_mat * GF256(2))
 
-# c_mat = np.array([GF256(syndromes[v+i]) for i in range(v)]).T
+# recursively calculate determinant of np array of GF256 objects using LaPlace extension
+def rec_det(arr):
+    dim = arr.shape[0]
 
-# lambda_mat = np.matmul(np.linalg.inv(s_mat), c_mat)
-# print(lambda_mat)
+    # do base cases manually
+    if dim == 1:
+        return arr[0][0]
+    elif dim == 2:
+        return (arr[0][0] * arr[1][1]) + (arr[1][0] * arr[0][1])
+    
+    # LaPlace extend and recursively calculate each smaller matrix
+    d = GF256(0)
+    for i in range(dim):
+        smaller_arr = np.array([[arr[j][k] for j in range(1, dim)] for k in range(dim) if k != i])
+        d = d + (arr[0][i] * rec_det(smaller_arr))
+    return d
+
+# print(rec_det(s_mat))
+
+
+
+while v > 0:
+    s_mat = np.array([[GF256(syndromes[i+j]) for i in range(v)] for j in range(v)])
+    if rec_det(s_mat) != GF256(0):
+        break
+    else: 
+        v -= 1
+        if v == 0:
+            print("empty error locator polynomial")
+
+c_mat = np.array([GF256(syndromes[v+i]) for i in range(v)]).T
+
+lambda_mat = np.matmul(np.linalg.inv(s_mat), c_mat)
+print(lambda_mat)
 
 
 print("Restored Message: " + str(restored_msg))
