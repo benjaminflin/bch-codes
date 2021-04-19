@@ -230,23 +230,6 @@ if not corrected:
     else:
         print("Detected too many errors!")
 
-errors = []
-# evaluate lambda polynomial at all powers of alpha looking for zeros
-for i in range(len(alpha_pows)):
-    # lambda mat = [l1, l2, l3] --> l1x^3 + l2x^2 + l3x + 1
-    # zeros of this poly are powers of alpha, and correspond to errors
-    val = GF256(0)
-    for j in range(len(lambda_mat)):
-        val += lambda_mat[j] * ((GF256(alpha_pows[i]) ** (len(lambda_mat) - j - 1)))
-    # print(val)
-    if val == GF256(0):
-        errors.append(alpha_pows.index((GF256(1) / GF256(alpha_pows[i])).poly))
-
-print(errors)
-potential_fix2 = encoded_msg
-for error in errors:
-    potential_fix2 ^= 1 << error
-restored_msg = bitwise_long_divide(potential_fix2, generator_poly)[0]
 
 print("Restored Message: " + str(restored_msg))
 
