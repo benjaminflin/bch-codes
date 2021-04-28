@@ -103,7 +103,7 @@ def eval_at_alpha_pow_bitwise(poly, i, generator):
     return bitwise_long_divide(result, generator)[1]
 
 # Irreducible polynomial of degree 9 in F_2[x]
-# Generates GF(2^8), so our default message length is q^m - 1 = 256 bits
+# Generates GF(2^8), so our default message length is q^m - 1 = 255 bits
 primitive_poly = 0b100011101
 
 # Store the powers of alpha in a table for future use
@@ -145,6 +145,9 @@ def get_minor(arr, i, j):
     return np.array([[arr[k][l] for k in range(dim) if k != i] for l in range(dim) if l != j])
 
 # Recursively calculate determinant of np array of GF2n objects using LaPlace extension
+# BAD!!! Very very inefficient.  This func runs in O(n!) and is responsible for most of
+#   the slowdown for high values of t.  TODO: implement a polynomial time decomposition
+#   algorithm as detailed here: https://en.wikipedia.org/wiki/Matrix_decomposition
 def rec_det(arr):
     dim = arr.shape[0]
 
@@ -172,11 +175,11 @@ def get_inv(arr):
     return minors * det_inv
 
 
-# Generator polynomials for a (255, 231) BCH code with t = 0 - 10
+# Generator polynomials for a size 255 BCH code with t = 0 - 10
 # Citation:
 # https://link.springer.com/content/pdf/bbm%3A978-1-4899-2174-1%2F1.pdf 
 
-# generator_poly = lcm(m_1, ..., m_6) = (100011101)*(101110111)*(111110011) for t = 3
+# eg: generator_poly = lcm(m_1, ..., m_6) = (100011101)*(101110111)*(111110011) for t = 3
 generators = [1, \
               0b100011101, \
               0b10110111101100011, \
@@ -190,7 +193,7 @@ generators = [1, \
               0o22624710717340432416300455]
 
 # t = max number of correctable errors
-t = int(input(f"Enter maximum number of correctable errors (0-{len(generators) - 1}):")) % (len(generators) - 1)
+t = int(input(f"Enter maximum number of correctable errors (0-{len(generators) - 1}): ")) % (len(generators))
 generator_poly = generators[t]
 
 # Ask user for encoded message
@@ -211,7 +214,7 @@ encoded_msg = mult_as_polys(message, generator_poly)
 added_errors = [ random.randint(0, 255) for x in
     range(int(input(f"Enter number of errors (max {t}): "))) ]
 
-# Introduces errors to the message at the 3 following positions in the message
+# Introduces errors to the message at the random positions in the message
 for err in added_errors:
     encoded_msg ^= 1 << err
 
